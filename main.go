@@ -1,10 +1,13 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net"
 	"os"
+	"strings"
 
+	"github.com/eyedeekay/sam3"
 	"github.com/gmule/gmule-core/protocol/ed2k"
 )
 
@@ -12,16 +15,35 @@ func init() {
 	log.SetFlags(log.Lshortfile | log.LstdFlags)
 }
 
-const (
-	// serverAddr = "ginuerzh.xyz:4661"
-	// serverAddr = "176.103.56.98:2442"
-	serverAddr = "176.103.48.36:4184"
-)
+var serverAddr = flag.String("server", "80.208.228.241:8369", "emule server to connect to")
+var samAddr = flag.String("i2p", "127.0.0.1:7656", "SAM server to use for I2P connections")
+
+var conn net.Conn
+var err error
 
 func main() {
-	conn, err := net.Dial("tcp", serverAddr)
-	if err != nil {
-		log.Fatal(err)
+	if strings.HasSuffix(*serverAddr, ".i2p") {
+		sam, err := sam3.NewSAM(*samAddr)
+		if err != nil {
+			log.Fatal(err)
+		}
+		keys, err := sam.NewKeys()
+		if err != nil {
+			log.Fatal(err)
+		}
+		stream, err := sam.NewStreamSession("clientTun", keys, sam3.Options_Small)
+		if err != nil {
+			log.Fatal(err)
+		}
+		conn, err = stream.Dial("i2p", *serverAddr)
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		conn, err = net.Dial("tcp", *serverAddr)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	var message ed2k.Message
@@ -90,16 +112,19 @@ func fileSearchMessage() ed2k.Message {
 	}
 }
 
-func sendMessage(conn net.Conn, m ed2k.Message) (err error) {
-	log.Println(m)
-	data, err := m.Encode()
-	if err != nil {
-		return
+func sendMessage(conn net.Conn, m ed2k.Message) error {
+	if m != nil {
+		log.Println(m)
+		data, err := m.Encode()
+		if err != nil {
+			return err
+		}
+		if _, err = conn.Write(data); err != nil {
+			return err
+		}
+		return nil
 	}
-	if _, err = conn.Write(data); err != nil {
-		return
-	}
-	return
+	return nil
 }
 
 /*
